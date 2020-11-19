@@ -3,6 +3,7 @@ import shapefile
 import shapely.geometry
 import sys
 import warnings
+import math
 from inspect import stack
 from math import cos, pi, sin
 from OpenGL.GL import *
@@ -148,8 +149,22 @@ class View(QOpenGLWidget):
             yield from [polygon] if polygon.geom_type == 'Polygon' else polygon
         
     def LLH_to_ECEF(self, lat, lon, alt):
-        ecef, llh = pyproj.Proj(proj='geocent'), pyproj.Proj(proj='latlong')
-        x, y, z = pyproj.transform(llh, ecef, lon, lat, alt, radians=False)
+        #ecef, llh = pyproj.Proj(proj='geocent'), pyproj.Proj(proj='latlong')
+        #x, y, z = pyproj.transform(llh, ecef, lon, lat, alt, radians=False)
+
+        rad_lat = lat * (math.pi / 180.0)
+        rad_lon = lon * (math.pi / 180.0)
+
+        a = 6378137.0
+        finv = 298.257223563
+        f = 1 / finv
+        e2 = 1 - (1 - f) * (1 - f)
+        v = a / math.sqrt(1 - e2 * math.sin(rad_lat) * math.sin(rad_lat))
+
+        x = (v + alt) * math.cos(rad_lat) * math.cos(rad_lon)
+        y = (v + alt) * math.cos(rad_lat) * math.sin(rad_lon)
+        z = (v * (1 - e2) + alt) * math.sin(rad_lat)
+
         return x/1000000, y/1000000, z/1000000
         
 class Node():
