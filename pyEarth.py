@@ -22,24 +22,33 @@ class View(QOpenGLWidget):
 
     def initializeGL(self):
         glMatrixMode(GL_PROJECTION)
-        self.create_polygons()
+        #self.create_polygons(0,0,0)
         glFrustum(-1, 1, -1, 1, 5, 1000)
+        self.polygons = glGenLists(1)
+        self.lake_polygons = glGenLists(1)
 
     def paintGL(self):
         glColor(0, 0, 255)
         glEnable(GL_DEPTH_TEST)
         glBegin(GL_POLYGON)
         for vertex in range(0, 100):
-            angle, radius = float(vertex)*2.0*pi/100, 6.370997
+            angle, radius = float(vertex)*2.0*pi/100, 6.37813   #6378137.0
             glVertex3f(cos(angle)*radius, sin(angle)*radius, 0.0)
         glEnd()
         if hasattr(self, 'polygons'):
-            glPushMatrix()
-            glRotated(self.rx/16, 1, 0, 0)
-            glRotated(self.ry/16, 0, 1, 0)
-            glRotated(self.rz/16, 0, 0, 1)
-            glCallList(self.polygons)
-            glPopMatrix()
+           glPushMatrix()
+           glRotated(self.rx/16, 1, 0, 0)
+           glRotated(self.ry/16, 0, 1, 0)
+           glRotated(self.rz/16, 0, 0, 1)
+           glCallList(self.polygons)
+           glPopMatrix()
+        if hasattr(self, 'lake_polygons'):
+           glPushMatrix()
+           glRotated(self.rx/16, 1, 0, 0)
+           glRotated(self.ry/16, 0, 1, 0)
+           glRotated(self.rz/16, 0, 0, 1)
+           glCallList(self.lake_polygons)
+           glPopMatrix()
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
         gluLookAt(self.x, self.y, self.z, self.cx, self.cy, self.cz, 0, 1, 0)
@@ -69,24 +78,46 @@ class View(QOpenGLWidget):
     def rotate(self):  
         self.rx, self.ry = self.rx + 6, self.ry + 6
             
-    def create_polygons(self):
-        self.polygons = glGenLists(1)
-        glNewList(self.polygons, GL_COMPILE)
+    
+    def create_polygons(self,r,g,b,height):
+        glNewList(self.polygons,GL_COMPILE)
         for polygon in self.extract_polygons():
             glLineWidth(2)
             glBegin(GL_LINE_LOOP)
-            glColor(0, 0, 0)
+            #line colour
+            glColor(0, 0,0)
             for lon, lat in polygon.exterior.coords:
-                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1))
+                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
             glEnd()
-            glColor(0, 255, 0)
+            #fill colour
+            glColor(r, g, b)
             glBegin(GL_TRIANGLES)
-            for vertex in self.polygon_tesselator(polygon):
+            for vertex in self.polygon_tesselator(polygon , height):
                 glVertex(*vertex)
             glEnd()
         glEndList()
-        
-    def polygon_tesselator(self, polygon):    
+
+    def create_lake_polygons(self,r,g,b,height):
+
+        glNewList(self.lake_polygons,GL_COMPILE)
+        for polygon in self.extract_polygons():
+            glLineWidth(2)
+            glBegin(GL_LINE_LOOP)
+            #line colour
+            glColor(0, 0,0)
+            for lon, lat in polygon.exterior.coords:
+                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
+            glEnd()
+            #fill colour
+            glColor(r, g, b)
+            glBegin(GL_TRIANGLES)
+            for vertex in self.polygon_tesselator(polygon , height):
+                glVertex(*vertex)
+            glEnd()
+        glEndList()
+
+
+    def polygon_tesselator(self, polygon,height):    
         vertices, tess = [], gluNewTess()
         gluTessCallback(tess, GLU_TESS_EDGE_FLAG_DATA, lambda *args: None)
         gluTessCallback(tess, GLU_TESS_VERTEX, lambda v: vertices.append(v))
@@ -96,7 +127,7 @@ class View(QOpenGLWidget):
         gluTessBeginPolygon(tess, 0)
         gluTessBeginContour(tess)
         for lon, lat in polygon.exterior.coords:
-            point = self.LLH_to_ECEF(lat, lon, 0)
+            point = self.LLH_to_ECEF(lat, lon, 0,height)
             gluTessVertex(tess, point, point)
         gluTessEndContour(tess)
         gluTessEndPolygon(tess)
@@ -111,15 +142,12 @@ class View(QOpenGLWidget):
         for polygon in polygons:
             polygon = shapely.geometry.shape(polygon)
             yield from [polygon] if polygon.geom_type == 'Polygon' else polygon
-        
-    def LLH_to_ECEF(self, lat, lon, alt):
-        #ecef, llh = pyproj.Proj(proj='geocent'), pyproj.Proj(proj='latlong')
-        #x, y, z = transform(llh, ecef, lon, lat, alt, radians=False)
 
+    def LLH_to_ECEF(self, lat, lon, alt,height):
         rad_lat = lat * (math.pi / 180.0)
         rad_lon = lon * (math.pi / 180.0)
 
-        a = 6378137.0
+        a = 6378137.0 * height
         finv = 298.257223563
         f = 1 / finv
         e2 = 1 - (1 - f) * (1 - f)
@@ -132,14 +160,23 @@ class View(QOpenGLWidget):
         return x/1000000, y/1000000, z/1000000
 
 class PyEarth(QMainWindow):
-    def __init__(self):        
+    
+    def __init__(self):
+
+
         super().__init__()
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
         menu_bar = self.menuBar()
+
         import_shapefile = QAction('Import shapefile', self)
         import_shapefile.triggered.connect(self.import_shapefile)
         menu_bar.addAction(import_shapefile)
+
+        import_lake_shapefile = QAction('Import Lake shapefile', self)
+        import_lake_shapefile.triggered.connect(self.import_lake_shapefile)
+        menu_bar.addAction(import_lake_shapefile)
+
         self.view = View()
         self.view.setFocusPolicy(Qt.StrongFocus)
         layout = QGridLayout(central_widget)
@@ -147,7 +184,13 @@ class PyEarth(QMainWindow):
                 
     def import_shapefile(self):
         self.view.shapefile = QFileDialog.getOpenFileName(self, 'Import')[0]
-        self.view.create_polygons()
+        self.view.create_polygons(0,250,0,1.00)
+        self.update()
+        
+    def import_lake_shapefile(self):
+        self.view.shapefile = QFileDialog.getOpenFileName(self, 'Import')[0]
+        self.view.create_lake_polygons(0,0,250,1.0001)
+        self.update()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
