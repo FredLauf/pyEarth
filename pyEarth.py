@@ -26,6 +26,7 @@ class View(QOpenGLWidget):
         glFrustum(-1, 1, -1, 1, 5, 1000)
         self.polygons = glGenLists(1)
         self.lake_polygons = glGenLists(1)
+        self.river_polylines = glGenLists(1)
 
     def paintGL(self):
         glColor(0, 0, 255)
@@ -43,6 +44,13 @@ class View(QOpenGLWidget):
            glCallList(self.polygons)
            glPopMatrix()
         if hasattr(self, 'lake_polygons'):
+           glPushMatrix()
+           glRotated(self.rx/16, 1, 0, 0)
+           glRotated(self.ry/16, 0, 1, 0)
+           glRotated(self.rz/16, 0, 0, 1)
+           glCallList(self.lake_polygons)
+           glPopMatrix()
+        if hasattr(self, 'river_polylines'):
            glPushMatrix()
            glRotated(self.rx/16, 1, 0, 0)
            glRotated(self.ry/16, 0, 1, 0)
@@ -116,6 +124,29 @@ class View(QOpenGLWidget):
             glEnd()
         glEndList()
 
+    def create_river_polylines(self,r,g,b,height):
+
+        glNewList(self.river_polylines,GL_COMPILE)
+        for polyline in self.extract_polylines():
+            glLineWidth(2)
+            glBegin(GL_LINE_LOOP)
+            #line colour
+            glColor(0, 0,0)
+            print(polyline.coords)
+            for lon, lat in polyline.coords:
+                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
+            #for lon, lat in polyline.exterior.coords:
+            #    glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
+            glEnd()
+            #fill colour
+            # glColor(r, g, b)
+            # glBegin(GL_TRIANGLES)
+            # for vertex in self.polygon_tesselator(polygon , height):
+            #     glVertex(*vertex)
+            # glEnd()
+        glEndList()
+
+
 
     def polygon_tesselator(self, polygon,height):    
         vertices, tess = [], gluNewTess()
@@ -142,6 +173,30 @@ class View(QOpenGLWidget):
         for polygon in polygons:
             polygon = shapely.geometry.shape(polygon)
             yield from [polygon] if polygon.geom_type == 'Polygon' else polygon
+
+    def extract_polylines(self):
+        if not hasattr(self, 'shapefile'):
+            return
+        sf = shapefile.Reader(self.shapefile)
+        polylines = sf.shapes()
+        print(len(polylines))
+        i=0
+        for polyline in polylines:
+            try:
+                polyline = shapely.geometry.shape(polyline)
+            
+                if polyline.geom_type == "LineString":
+                    yield from [polyline] if polyline.geom_type == 'LineString' else linestring
+
+                elif polyline.geom_type == "MultiLineString":
+                    mls = [polyline]
+                    for mlsriver in mls:
+                        for mlsline in mlsriver:
+                            yield from [mlsline] if mlsline.geom_type == 'LineString' else linestring
+            except:
+                print("Error: Polyline could not be loaded")
+                continue 
+
 
     def LLH_to_ECEF(self, lat, lon, alt,height):
         rad_lat = lat * (math.pi / 180.0)
@@ -177,6 +232,10 @@ class PyEarth(QMainWindow):
         import_lake_shapefile.triggered.connect(self.import_lake_shapefile)
         menu_bar.addAction(import_lake_shapefile)
 
+        import_river_shapefile = QAction('Import River shapefile', self)
+        import_river_shapefile.triggered.connect(self.import_river_shapefile)
+        menu_bar.addAction(import_river_shapefile)
+
         self.view = View()
         self.view.setFocusPolicy(Qt.StrongFocus)
         layout = QGridLayout(central_widget)
@@ -190,6 +249,11 @@ class PyEarth(QMainWindow):
     def import_lake_shapefile(self):
         self.view.shapefile = QFileDialog.getOpenFileName(self, 'Import')[0]
         self.view.create_lake_polygons(0,0,250,1.0001)
+        self.update()
+
+    def import_river_shapefile(self):
+        self.view.shapefile = QFileDialog.getOpenFileName(self, 'Import')[0]
+        self.view.create_river_polylines(0,0,250,1.0002)
         self.update()
 
 if __name__ == '__main__':
