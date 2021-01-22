@@ -5,6 +5,8 @@ import shapely.geometry
 import sys
 import math
 from math import cos, pi, sin
+from sgp4.api import Satrec
+from sgp4.api import jday
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from PyQt5.QtCore import Qt, QTimer
@@ -27,15 +29,18 @@ class View(QOpenGLWidget):
         self.polygons = glGenLists(1)
         self.lake_polygons = glGenLists(1)
         self.river_polylines = glGenLists(1)
+        self.points = glGenLists(1)
 
     def paintGL(self):
         glColor(0, 0, 255)
         glEnable(GL_DEPTH_TEST)
         glBegin(GL_POLYGON)
         for vertex in range(0, 100):
-            angle, radius = float(vertex)*2.0*pi/100, 6.37813   #6378137.0
+            angle, radius = float(vertex)*2.0*pi/100, 6.40   #6378137.0
             glVertex3f(cos(angle)*radius, sin(angle)*radius, 0.0)
         glEnd()
+
+
         if hasattr(self, 'polygons'):
            glPushMatrix()
            glRotated(self.rx/16, 1, 0, 0)
@@ -55,7 +60,14 @@ class View(QOpenGLWidget):
            glRotated(self.rx/16, 1, 0, 0)
            glRotated(self.ry/16, 0, 1, 0)
            glRotated(self.rz/16, 0, 0, 1)
-           glCallList(self.lake_polygons)
+           glCallList(self.river_polylines)
+           glPopMatrix()
+        if hasattr(self, 'points'):
+           glPushMatrix()
+           glRotated(self.rx/16, 1, 0, 0)
+           glRotated(self.ry/16, 0, 1, 0)
+           glRotated(self.rz/16, 0, 0, 1)
+           glCallList(self.points)
            glPopMatrix()
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
@@ -66,7 +78,7 @@ class View(QOpenGLWidget):
         self.last_pos = event.pos()
         
     def wheelEvent(self, event):
-        self.z += -2 if event.angleDelta().y() > 0 else 2
+        self.z += -1.5 if event.angleDelta().y() > 0 else 1.5
 
     def mouseMoveEvent(self, event):
         dx, dy = event.x() - self.last_pos.x(), event.y() - self.last_pos.y()
@@ -90,7 +102,7 @@ class View(QOpenGLWidget):
     def create_polygons(self,r,g,b,height):
         glNewList(self.polygons,GL_COMPILE)
         for polygon in self.extract_polygons():
-            glLineWidth(2)
+            glLineWidth(1)
             glBegin(GL_LINE_LOOP)
             #line colour
             glColor(0, 0,0)
@@ -103,50 +115,95 @@ class View(QOpenGLWidget):
             for vertex in self.polygon_tesselator(polygon , height):
                 glVertex(*vertex)
             glEnd()
+
+            #For showing the outline of each tesselated polygon
+
+            # glBegin(GL_LINE_STRIP)
+            # glColor(0, 0,0)
+            # for vertex in self.polygon_tesselator(polygon , height):
+            #     glVertex(*vertex)
+            # glEnd()
+
+
+        # s = '1 07276U 74026A   21002.17948966 -.00000045  00000-0  00000-0 0  9996'
+        # t = '2 07276  64.1649 307.2336 6735925 286.5804  13.6168  2.45095753236330'
+        # satellite = Satrec.twoline2rv(s, t)
+
+        # glPointSize(10)
+        # glColor(250, 0, 0)
+        # glBegin(GL_POINTS)
+        # for i in range(0,12): 
+        #     jd, fr = jday(2019, 1, 1, i, 59, 33)
+        #     print(jd )
+        #     print(fr)
+        #     e, position, v = satellite.sgp4(jd, fr)
+        #     glVertex3f(position[0]/1000,position[1]/1000,position[2]/1000)
+        # glEnd()
+
+
         glEndList()
 
     def create_lake_polygons(self,r,g,b,height):
-
         glNewList(self.lake_polygons,GL_COMPILE)
         for polygon in self.extract_polygons():
-            glLineWidth(2)
-            glBegin(GL_LINE_LOOP)
-            #line colour
-            glColor(0, 0,0)
-            for lon, lat in polygon.exterior.coords:
-                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
-            glEnd()
+            
             #fill colour
             glColor(r, g, b)
             glBegin(GL_TRIANGLES)
             for vertex in self.polygon_tesselator(polygon , height):
                 glVertex(*vertex)
             glEnd()
+
+            glLineWidth(1)
+            glBegin(GL_LINE_LOOP)
+            #line colour
+            glColor(0, 0,0)
+            for lon, lat in polygon.exterior.coords:
+                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
+            glEnd()
+
+
         glEndList()
 
     def create_river_polylines(self,r,g,b,height):
 
         glNewList(self.river_polylines,GL_COMPILE)
+        i=1
         for polyline in self.extract_polylines():
-            glLineWidth(2)
-            glBegin(GL_LINE_LOOP)
+            print("River number: " + str(i))
+            glLineWidth(1)
+            glBegin(GL_LINE_STRIP)
+            
             #line colour
-            glColor(0, 0,0)
-            print(polyline.coords)
+            glColor(r, g,b)
             for lon, lat in polyline.coords:
                 glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
-            #for lon, lat in polyline.exterior.coords:
-            #    glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
             glEnd()
-            #fill colour
-            # glColor(r, g, b)
-            # glBegin(GL_TRIANGLES)
-            # for vertex in self.polygon_tesselator(polygon , height):
-            #     glVertex(*vertex)
-            # glEnd()
+            i=i+1
+        print("All rivers done")
         glEndList()
 
 
+    def create_points(self,r,g,b,height):
+        glNewList(self.points,GL_COMPILE)
+
+        for point in self.extract_points():
+            glPointSize(3)
+            glColor(r, g, b)
+            glBegin(GL_POINTS)
+            for lon, lat in point.coords:
+                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
+            glEnd()
+        glEndList()
+
+    def extract_points(self):
+        if not hasattr(self, 'shapefile'):
+                    return
+        sf = shapefile.Reader(self.shapefile)       
+        points = sf.shapes() 
+        for point in points:
+            point = shapely.geometry.shape(point)
+            yield from [point] if point.geom_type == 'Point' else point
 
     def polygon_tesselator(self, polygon,height):    
         vertices, tess = [], gluNewTess()
@@ -157,13 +214,82 @@ class View(QOpenGLWidget):
         
         gluTessBeginPolygon(tess, 0)
         gluTessBeginContour(tess)
+        #Get the coordinates of the outside of the polygon/country
         for lon, lat in polygon.exterior.coords:
             point = self.LLH_to_ECEF(lat, lon, 0,height)
             gluTessVertex(tess, point, point)
         gluTessEndContour(tess)
         gluTessEndPolygon(tess)
         gluDeleteTess(tess)
-        return vertices
+
+        vertices_new=[]
+        for i in range(0,len(vertices),3):
+            A=vertices[i]
+            B=vertices[i+1]
+            C=vertices[i+2]     
+            D=[]
+            x=(A[0]+B[0])/2
+            y=(A[1]+B[1])/2
+            z=(A[2]+B[2])/2
+            vector_length= math.sqrt((x*x)+(y*y)+(z*z))
+            x=x/vector_length
+            y=y/vector_length
+            z=z/vector_length
+            x=x*6.378137
+            y=y*6.378137
+            z=z*6.378137
+            D.append(x) #x
+            D.append(y) #y
+            D.append(z) #z
+            E=[]
+            x=(C[0]+B[0])/2
+            y=(C[1]+B[1])/2
+            z=(C[2]+B[2])/2
+            vector_length= math.sqrt((x*x)+(y*y)+(z*z))
+            x=x/vector_length
+            y=y/vector_length
+            z=z/vector_length
+            x=x*6.378137
+            y=y*6.378137
+            z=z*6.378137
+            E.append(x) #x
+            E.append(y) #y
+            E.append(z) #z
+            F=[]
+            x=(C[0]+A[0])/2
+            y=(C[1]+A[1])/2
+            z=(C[2]+A[2])/2
+            vector_length= math.sqrt((x*x)+(y*y)+(z*z))
+            x=x/vector_length
+            y=y/vector_length
+            z=z/vector_length
+            x=x*6.378137
+            y=y*6.378137
+            z=z*6.378137
+            F.append(x) #x
+            F.append(y) #y
+            F.append(z) #z
+
+            vertices_new.append(A)
+            vertices_new.append(D)
+            vertices_new.append(F)
+
+            vertices_new.append(D)
+            vertices_new.append(B)
+            vertices_new.append(E)
+
+            vertices_new.append(E)
+            vertices_new.append(C)
+            vertices_new.append(F)
+
+            vertices_new.append(F)
+            vertices_new.append(D)
+            vertices_new.append(E)
+            
+        #print(len(vertices))
+        #print(len(vertices_new))
+
+        return vertices_new
         
     def extract_polygons(self):
         if not hasattr(self, 'shapefile'):
@@ -179,8 +305,6 @@ class View(QOpenGLWidget):
             return
         sf = shapefile.Reader(self.shapefile)
         polylines = sf.shapes()
-        print(len(polylines))
-        i=0
         for polyline in polylines:
             try:
                 polyline = shapely.geometry.shape(polyline)
@@ -212,13 +336,18 @@ class View(QOpenGLWidget):
         y = (v + alt) * math.cos(rad_lat) * math.sin(rad_lon)
         z = (v * (1 - e2) + alt) * math.sin(rad_lat)
 
+        vector_length= math.sqrt((x*x)+(y*y)+(z*z))
+        x=x/vector_length
+        y=y/vector_length
+        z=z/vector_length
+        x=x*6378137
+        y=y*6378137
+        z=z*6378137
         return x/1000000, y/1000000, z/1000000
 
 class PyEarth(QMainWindow):
     
     def __init__(self):
-
-
         super().__init__()
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
@@ -235,6 +364,10 @@ class PyEarth(QMainWindow):
         import_river_shapefile = QAction('Import River shapefile', self)
         import_river_shapefile.triggered.connect(self.import_river_shapefile)
         menu_bar.addAction(import_river_shapefile)
+
+        import_points_shapefile = QAction('Import Points shapefile', self)
+        import_points_shapefile.triggered.connect(self.import_points_shapefile)
+        menu_bar.addAction(import_points_shapefile)
 
         self.view = View()
         self.view.setFocusPolicy(Qt.StrongFocus)
@@ -253,7 +386,12 @@ class PyEarth(QMainWindow):
 
     def import_river_shapefile(self):
         self.view.shapefile = QFileDialog.getOpenFileName(self, 'Import')[0]
-        self.view.create_river_polylines(0,0,250,1.0002)
+        self.view.create_river_polylines(0,0,250,1.003)
+        self.update()
+
+    def import_points_shapefile(self):
+        self.view.shapefile = QFileDialog.getOpenFileName(self, 'Import')[0]
+        self.view.create_points(0,0,0,1.005)
         self.update()
 
 if __name__ == '__main__':
