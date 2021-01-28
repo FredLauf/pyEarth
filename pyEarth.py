@@ -1,5 +1,3 @@
-import pyproj 
-from pyproj import transform
 import shapefile
 import shapely.geometry
 import sys
@@ -9,10 +7,11 @@ from sgp4.api import Satrec
 from sgp4.api import jday
 from OpenGL.GL import *
 from OpenGL.GLU import *
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtWidgets import (QAction, QApplication, QFileDialog, QGridLayout, 
-                                    QMainWindow, QWidget, QOpenGLWidget)
-    
+from PyQt5.QtCore import *
+from PyQt5.QtWidgets import *
+
+
+
 class View(QOpenGLWidget):
     
     def __init__(self, parent=None):
@@ -24,6 +23,8 @@ class View(QOpenGLWidget):
 
     def initializeGL(self):
         glMatrixMode(GL_PROJECTION)
+        glEnable(GL_LINE_SMOOTH)  
+        glEnable(GL_BLEND)  
         #self.create_polygons(0,0,0)
         glFrustum(-1, 1, -1, 1, 5, 1000)
         self.polygons = glGenLists(1)
@@ -34,11 +35,13 @@ class View(QOpenGLWidget):
     def paintGL(self):
         glColor(0, 0, 255)
         glEnable(GL_DEPTH_TEST)
-        glBegin(GL_POLYGON)
-        for vertex in range(0, 100):
-            angle, radius = float(vertex)*2.0*pi/100, 6.40   #6378137.0
-            glVertex3f(cos(angle)*radius, sin(angle)*radius, 0.0)
-        glEnd()
+
+        glPushMatrix()
+        glTranslatef(0, 0, 0) #Move to the place
+        glColor(0, 0, 255)
+        gluSphere(gluNewQuadric(), 6.35, 128, 128) #Draw sphere
+
+        glPopMatrix()
 
 
         if hasattr(self, 'polygons'):
@@ -73,12 +76,12 @@ class View(QOpenGLWidget):
         glLoadIdentity()
         gluLookAt(self.x, self.y, self.z, self.cx, self.cy, self.cz, 0, 1, 0)
         self.update()
-        
+
     def mousePressEvent(self, event):
         self.last_pos = event.pos()
         
     def wheelEvent(self, event):
-        self.z += -1.5 if event.angleDelta().y() > 0 else 1.5
+        self.z += -2 if event.angleDelta().y() > 0 else 2
 
     def mouseMoveEvent(self, event):
         dx, dy = event.x() - self.last_pos.x(), event.y() - self.last_pos.y()
@@ -98,11 +101,76 @@ class View(QOpenGLWidget):
     def rotate(self):  
         self.rx, self.ry = self.rx + 6, self.ry + 6
             
+    def vertices_generator(self,input):
+        vertices_new=[]
+        for i in range(0,len(input),3):
+            A=input[i]
+            B=input[i+1]
+            C=input[i+2]     
+            D=[]
+            x=(A[0]+B[0])/2
+            y=(A[1]+B[1])/2
+            z=(A[2]+B[2])/2
+            vector_length= math.sqrt((x*x)+(y*y)+(z*z))
+            x=x/vector_length
+            y=y/vector_length
+            z=z/vector_length
+            x=x*6.378137
+            y=y*6.378137
+            z=z*6.378137
+            D.append(x) #x
+            D.append(y) #y
+            D.append(z) #z
+            E=[]
+            x=(C[0]+B[0])/2
+            y=(C[1]+B[1])/2
+            z=(C[2]+B[2])/2
+            vector_length= math.sqrt((x*x)+(y*y)+(z*z))
+            x=x/vector_length
+            y=y/vector_length
+            z=z/vector_length
+            x=x*6.378137
+            y=y*6.378137
+            z=z*6.378137
+            E.append(x) #x
+            E.append(y) #y
+            E.append(z) #z
+            F=[]
+            x=(C[0]+A[0])/2
+            y=(C[1]+A[1])/2
+            z=(C[2]+A[2])/2
+            vector_length= math.sqrt((x*x)+(y*y)+(z*z))
+            x=x/vector_length
+            y=y/vector_length
+            z=z/vector_length
+            x=x*6.378137
+            y=y*6.378137
+            z=z*6.378137
+            F.append(x) #x
+            F.append(y) #y
+            F.append(z) #z
+
+            vertices_new.append(A)
+            vertices_new.append(D)
+            vertices_new.append(F)
+
+            vertices_new.append(D)
+            vertices_new.append(B)
+            vertices_new.append(E)
+
+            vertices_new.append(E)
+            vertices_new.append(C)
+            vertices_new.append(F)
+
+            vertices_new.append(F)
+            vertices_new.append(D)
+            vertices_new.append(E)
+        return vertices_new
     
     def create_polygons(self,r,g,b,height):
         glNewList(self.polygons,GL_COMPILE)
         for polygon in self.extract_polygons():
-            glLineWidth(1)
+            glLineWidth(1.2)
             glBegin(GL_LINE_LOOP)
             #line colour
             glColor(0, 0,0)
@@ -117,30 +185,11 @@ class View(QOpenGLWidget):
             glEnd()
 
             #For showing the outline of each tesselated polygon
-
             # glBegin(GL_LINE_STRIP)
             # glColor(0, 0,0)
             # for vertex in self.polygon_tesselator(polygon , height):
             #     glVertex(*vertex)
             # glEnd()
-
-
-        # s = '1 07276U 74026A   21002.17948966 -.00000045  00000-0  00000-0 0  9996'
-        # t = '2 07276  64.1649 307.2336 6735925 286.5804  13.6168  2.45095753236330'
-        # satellite = Satrec.twoline2rv(s, t)
-
-        # glPointSize(10)
-        # glColor(250, 0, 0)
-        # glBegin(GL_POINTS)
-        # for i in range(0,12): 
-        #     jd, fr = jday(2019, 1, 1, i, 59, 33)
-        #     print(jd )
-        #     print(fr)
-        #     e, position, v = satellite.sgp4(jd, fr)
-        #     glVertex3f(position[0]/1000,position[1]/1000,position[2]/1000)
-        # glEnd()
-
-
         glEndList()
 
     def create_lake_polygons(self,r,g,b,height):
@@ -221,76 +270,12 @@ class View(QOpenGLWidget):
         gluTessEndContour(tess)
         gluTessEndPolygon(tess)
         gluDeleteTess(tess)
-
-        vertices_new=[]
-        for i in range(0,len(vertices),3):
-            A=vertices[i]
-            B=vertices[i+1]
-            C=vertices[i+2]     
-            D=[]
-            x=(A[0]+B[0])/2
-            y=(A[1]+B[1])/2
-            z=(A[2]+B[2])/2
-            vector_length= math.sqrt((x*x)+(y*y)+(z*z))
-            x=x/vector_length
-            y=y/vector_length
-            z=z/vector_length
-            x=x*6.378137
-            y=y*6.378137
-            z=z*6.378137
-            D.append(x) #x
-            D.append(y) #y
-            D.append(z) #z
-            E=[]
-            x=(C[0]+B[0])/2
-            y=(C[1]+B[1])/2
-            z=(C[2]+B[2])/2
-            vector_length= math.sqrt((x*x)+(y*y)+(z*z))
-            x=x/vector_length
-            y=y/vector_length
-            z=z/vector_length
-            x=x*6.378137
-            y=y*6.378137
-            z=z*6.378137
-            E.append(x) #x
-            E.append(y) #y
-            E.append(z) #z
-            F=[]
-            x=(C[0]+A[0])/2
-            y=(C[1]+A[1])/2
-            z=(C[2]+A[2])/2
-            vector_length= math.sqrt((x*x)+(y*y)+(z*z))
-            x=x/vector_length
-            y=y/vector_length
-            z=z/vector_length
-            x=x*6.378137
-            y=y*6.378137
-            z=z*6.378137
-            F.append(x) #x
-            F.append(y) #y
-            F.append(z) #z
-
-            vertices_new.append(A)
-            vertices_new.append(D)
-            vertices_new.append(F)
-
-            vertices_new.append(D)
-            vertices_new.append(B)
-            vertices_new.append(E)
-
-            vertices_new.append(E)
-            vertices_new.append(C)
-            vertices_new.append(F)
-
-            vertices_new.append(F)
-            vertices_new.append(D)
-            vertices_new.append(E)
-            
-        #print(len(vertices))
-        #print(len(vertices_new))
-
-        return vertices_new
         
+        vertices_new=self.vertices_generator(vertices)
+        vertices_new_new=self.vertices_generator(vertices_new)
+        
+        return vertices_new_new
+
     def extract_polygons(self):
         if not hasattr(self, 'shapefile'):
             return
@@ -348,6 +333,10 @@ class View(QOpenGLWidget):
 class PyEarth(QMainWindow):
     
     def __init__(self):
+        # input_text = input("Camera control with mouse? (y/n)")
+
+
+
         super().__init__()
         central_widget = QWidget(self)
         self.setCentralWidget(central_widget)
@@ -369,11 +358,12 @@ class PyEarth(QMainWindow):
         import_points_shapefile.triggered.connect(self.import_points_shapefile)
         menu_bar.addAction(import_points_shapefile)
 
+
         self.view = View()
         self.view.setFocusPolicy(Qt.StrongFocus)
         layout = QGridLayout(central_widget)
         layout.addWidget(self.view, 0, 0)
-                
+
     def import_shapefile(self):
         self.view.shapefile = QFileDialog.getOpenFileName(self, 'Import')[0]
         self.view.create_polygons(0,250,0,1.00)
