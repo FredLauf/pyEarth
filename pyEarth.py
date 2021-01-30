@@ -11,7 +11,6 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 
 
-
 class View(QOpenGLWidget):
     
     def __init__(self, parent=None):
@@ -43,7 +42,6 @@ class View(QOpenGLWidget):
 
         glPopMatrix()
 
-
         if hasattr(self, 'polygons'):
            glPushMatrix()
            glRotated(self.rx/16, 1, 0, 0)
@@ -74,7 +72,7 @@ class View(QOpenGLWidget):
            glPopMatrix()
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
-        gluLookAt(self.x, self.y, self.z, self.cx, self.cy, self.cz, 0, 1, 0)
+        gluLookAt(self.x, self.y, self.z, self.cx, self.cy, self.cz, self.upx, self.upy, self.upz)
         self.update()
 
     def mousePressEvent(self, event):
@@ -92,12 +90,21 @@ class View(QOpenGLWidget):
         self.last_pos = event.pos()
          
     def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Up:
+            self.x= self.x +0.4
+        if event.key() == Qt.Key_Down:
+            self.x= self.x -0.4
+        if event.key() == Qt.Key_Right:
+            self.y= self.y +0.4
+        if event.key() == Qt.Key_Left:
+            self.y= self.y -0.4
+
         if event.key() == Qt.Key_Space:
             if self.timer.isActive():
                 self.timer.stop()
             else:
                 self.timer.start()
-            
+
     def rotate(self):  
         self.rx, self.ry = self.rx + 6, self.ry + 6
             
@@ -175,12 +182,12 @@ class View(QOpenGLWidget):
             #line colour
             glColor(0, 0,0)
             for lon, lat in polygon.exterior.coords:
-                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
+                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height, True))
             glEnd()
             #fill colour
             glColor(r, g, b)
             glBegin(GL_TRIANGLES)
-            for vertex in self.polygon_tesselator(polygon , height):
+            for vertex in self.polygon_tesselator(polygon , height ):
                 glVertex(*vertex)
             glEnd()
 
@@ -208,7 +215,7 @@ class View(QOpenGLWidget):
             #line colour
             glColor(0, 0,0)
             for lon, lat in polygon.exterior.coords:
-                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
+                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height , True))
             glEnd()
 
 
@@ -226,7 +233,7 @@ class View(QOpenGLWidget):
             #line colour
             glColor(r, g,b)
             for lon, lat in polyline.coords:
-                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
+                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height, True))
             glEnd()
             i=i+1
         print("All rivers done")
@@ -241,7 +248,7 @@ class View(QOpenGLWidget):
             glColor(r, g, b)
             glBegin(GL_POINTS)
             for lon, lat in point.coords:
-                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height))
+                glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height, True))
             glEnd()
         glEndList()
 
@@ -265,16 +272,17 @@ class View(QOpenGLWidget):
         gluTessBeginContour(tess)
         #Get the coordinates of the outside of the polygon/country
         for lon, lat in polygon.exterior.coords:
-            point = self.LLH_to_ECEF(lat, lon, 0,height)
+            point = self.LLH_to_ECEF(lat, lon, 0,height, True)
             gluTessVertex(tess, point, point)
         gluTessEndContour(tess)
         gluTessEndPolygon(tess)
         gluDeleteTess(tess)
         
-        vertices_new=self.vertices_generator(vertices)
-        vertices_new_new=self.vertices_generator(vertices_new)
-        
-        return vertices_new_new
+        aliasing = self.aliasing
+
+        for i in range(0, aliasing):
+            vertices=self.vertices_generator(vertices)
+        return vertices
 
     def extract_polygons(self):
         if not hasattr(self, 'shapefile'):
@@ -307,10 +315,10 @@ class View(QOpenGLWidget):
                 continue 
 
 
-    def LLH_to_ECEF(self, lat, lon, alt,height):
+    def LLH_to_ECEF(self, lat, lon, alt,height, norm):
         rad_lat = lat * (math.pi / 180.0)
         rad_lon = lon * (math.pi / 180.0)
-
+        alt = 6378137 + alt
         a = 6378137.0 * height
         finv = 298.257223563
         f = 1 / finv
@@ -320,22 +328,36 @@ class View(QOpenGLWidget):
         x = (v + alt) * math.cos(rad_lat) * math.cos(rad_lon)
         y = (v + alt) * math.cos(rad_lat) * math.sin(rad_lon)
         z = (v * (1 - e2) + alt) * math.sin(rad_lat)
-
-        vector_length= math.sqrt((x*x)+(y*y)+(z*z))
-        x=x/vector_length
-        y=y/vector_length
-        z=z/vector_length
-        x=x*6378137
-        y=y*6378137
-        z=z*6378137
+        
+        if norm == True:
+            vector_length= math.sqrt((x*x)+(y*y)+(z*z))
+            x=x/vector_length
+            y=y/vector_length
+            z=z/vector_length
+            x=x*6378137
+            y=y*6378137
+            z=z*6378137
         return x/1000000, y/1000000, z/1000000
 
 class PyEarth(QMainWindow):
     
     def __init__(self):
-        # input_text = input("Camera control with mouse? (y/n)")
+        aliasing = 0
+        while  1 > aliasing or aliasing > 4 :
+            aliasing = int(input("Set aliasing factor from 1 to 4 (2 Recommended): "))
+        
+        
+        longitude = 200 
+        while  -180 > longitude or longitude > 180 :
+            longitude = int(input("Set camera longitude (-180 180): "))
 
+        latitude = 200 
+        while -90 > latitude or latitude > 90:
+            latitude = int(input("Set camera latitude (-90 90): "))
 
+        height = 0 
+        while 100 > height or height > 50000:
+            height = int(input("Set camera height (100 1000): "))
 
         super().__init__()
         central_widget = QWidget(self)
@@ -358,9 +380,20 @@ class PyEarth(QMainWindow):
         import_points_shapefile.triggered.connect(self.import_points_shapefile)
         menu_bar.addAction(import_points_shapefile)
 
-
         self.view = View()
         self.view.setFocusPolicy(Qt.StrongFocus)
+        self.view.aliasing = aliasing
+        self.view.longitude = longitude
+
+        print(self.view.LLH_to_ECEF(latitude, longitude, height , 1, False))
+        self.view.x,self.view.y,self.view.z= self.view.LLH_to_ECEF(latitude, longitude, 5 , 1, False)
+        self.view.cx=0
+        self.view.cy=0
+        self.view.cz=0
+        self.view.upx = 0
+        self.view.upy = 0
+        self.view.upz = 1
+
         layout = QGridLayout(central_widget)
         layout.addWidget(self.view, 0, 0)
 
