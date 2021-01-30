@@ -32,9 +32,9 @@ class View(QOpenGLWidget):
         self.points = glGenLists(1)
 
     def paintGL(self):
+        #glFrustum(-1, 1, -1, 1, 5, 1000)
         glColor(0, 0, 255)
         glEnable(GL_DEPTH_TEST)
-
         glPushMatrix()
         glTranslatef(0, 0, 0) #Move to the place
         glColor(0, 0, 255)
@@ -90,15 +90,24 @@ class View(QOpenGLWidget):
         self.last_pos = event.pos()
          
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key_Up:
-            self.x= self.x +0.4
-        if event.key() == Qt.Key_Down:
-            self.x= self.x -0.4
         if event.key() == Qt.Key_Right:
-            self.y= self.y +0.4
+            self.lon = self.lon + 2
+            self.x,self.y,self.z= self.LLH_to_ECEF(self.lat, self.lon, self.cam_height , 1, False)
         if event.key() == Qt.Key_Left:
-            self.y= self.y -0.4
-
+            self.lon = self.lon - 2
+            self.x,self.y,self.z= self.LLH_to_ECEF(self.lat, self.lon, self.cam_height , 1, False)
+        if event.key() == Qt.Key_Up:
+            self.lat = self.lat + 2
+            self.x,self.y,self.z= self.LLH_to_ECEF(self.lat, self.lon, self.cam_height , 1, False)
+        if event.key() == Qt.Key_Down:
+            self.lat = self.lat - 2
+            self.x,self.y,self.z= self.LLH_to_ECEF(self.lat, self.lon, self.cam_height , 1, False)
+        if event.key() == Qt.Key_Control:
+            self.cam_height = self.cam_height - 50
+            self.x,self.y,self.z= self.LLH_to_ECEF(self.lat, self.lon, self.cam_height , 1, False)
+        if event.key() == Qt.Key_Shift:
+            self.cam_height = self.cam_height + 50
+            self.x,self.y,self.z= self.LLH_to_ECEF(self.lat, self.lon, self.cam_height , 1, False)
         if event.key() == Qt.Key_Space:
             if self.timer.isActive():
                 self.timer.stop()
@@ -318,6 +327,7 @@ class View(QOpenGLWidget):
     def LLH_to_ECEF(self, lat, lon, alt,height, norm):
         rad_lat = lat * (math.pi / 180.0)
         rad_lon = lon * (math.pi / 180.0)
+        alt= alt*1000
         alt = 6378137 + alt
         a = 6378137.0 * height
         finv = 298.257223563
@@ -356,8 +366,8 @@ class PyEarth(QMainWindow):
             latitude = int(input("Set camera latitude (-90 90): "))
 
         height = 0 
-        while 100 > height or height > 50000:
-            height = int(input("Set camera height (100 1000): "))
+        while 1 > height or height > 50000000:
+            height = int(input("Set camera height (1000 1000) : "))
 
         super().__init__()
         central_widget = QWidget(self)
@@ -385,8 +395,12 @@ class PyEarth(QMainWindow):
         self.view.aliasing = aliasing
         self.view.longitude = longitude
 
+        self.view.lat=latitude
+        self.view.lon=longitude
+        self.view.cam_height = height
+
         print(self.view.LLH_to_ECEF(latitude, longitude, height , 1, False))
-        self.view.x,self.view.y,self.view.z= self.view.LLH_to_ECEF(latitude, longitude, 5 , 1, False)
+        self.view.x,self.view.y,self.view.z= self.view.LLH_to_ECEF(latitude, longitude, height , 1, False)
         self.view.cx=0
         self.view.cy=0
         self.view.cz=0
