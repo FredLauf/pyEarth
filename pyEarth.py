@@ -24,24 +24,25 @@ class View(QOpenGLWidget):
         glMatrixMode(GL_PROJECTION)
         glEnable(GL_LINE_SMOOTH)  
         glEnable(GL_BLEND)  
-        #self.create_polygons(0,0,0)
+        #Set the camera FOV
         glFrustum(self.frustL, self.frustR, self.frustB, self.frustT, 5, 1000)
+        #Initialise the polygon lists
         self.polygons = glGenLists(1)
         self.lake_polygons = glGenLists(1)
         self.river_polylines = glGenLists(1)
         self.points = glGenLists(1)
 
     def paintGL(self):
-        #glFrustum(-1, 1, -1, 1, 5, 1000)
-        glColor(0, 0, 255)
+        #Create the blue sphere 
         glEnable(GL_DEPTH_TEST)
         glPushMatrix()
-        glTranslatef(0, 0, 0) #Move to the place
+        glTranslatef(0, 0, 0)
         glColor(0, 0, 255)
-        gluSphere(gluNewQuadric(), 6.35, 128, 128) #Draw sphere
-
+        #Create sphere with radius 6.35 and made up with 128x128 slices
+        gluSphere(gluNewQuadric(), 6.35, 128, 128) 
         glPopMatrix()
 
+        #Check if the polygons exist and then rotates depending on the user input
         if hasattr(self, 'polygons'):
            glPushMatrix()
            glRotated(self.rx/16, 1, 0, 0)
@@ -72,12 +73,14 @@ class View(QOpenGLWidget):
            glPopMatrix()
         glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
+        #Method used to position the camera
         gluLookAt(self.x, self.y, self.z, self.cx, self.cy, self.cz, self.upx, self.upy, self.upz)
         self.update()
 
     def mousePressEvent(self, event):
         self.last_pos = event.pos()
         
+    #Method used to zoom in and out depending on the scroll wheel
     def wheelEvent(self, event):
         self.z += -2 if event.angleDelta().y() > 0 else 2
 
@@ -118,17 +121,21 @@ class View(QOpenGLWidget):
     def rotate(self):  
         self.rx, self.ry = self.rx + 6, self.ry + 6
             
+    #This method is used to subdivide a polygon into 4 polygons and then normalise them to Earth radius 
     def vertices_generator(self,input,height):
         vertices_new=[]
-        #height=height/1000000
         for i in range(0,len(input),3):
+            #Set the 3 vertices of the input triangle
             A=input[i]
             B=input[i+1]
-            C=input[i+2]     
+            C=input[i+2]  
+            #Initialise vertice D
             D=[]
+            #Find the vertice between vertice A and B
             x=(A[0]+B[0])/2
             y=(A[1]+B[1])/2
             z=(A[2]+B[2])/2
+            #Normalise the vector
             vector_length= math.sqrt((x*x)+(y*y)+(z*z))
             x=x/vector_length
             y=y/vector_length
@@ -168,36 +175,48 @@ class View(QOpenGLWidget):
             F.append(y) #y
             F.append(z) #z
 
+            #Create sub-poygon 1: A-D-F
             vertices_new.append(A)
             vertices_new.append(D)
             vertices_new.append(F)
 
+            #Create sub-poygon 2: D-B-E
             vertices_new.append(D)
             vertices_new.append(B)
             vertices_new.append(E)
 
+            #Create sub-poygon 3: E-C-F
             vertices_new.append(E)
             vertices_new.append(C)
             vertices_new.append(F)
 
+            #Create sub-poygon 4: F-D-E
             vertices_new.append(F)
             vertices_new.append(D)
             vertices_new.append(E)
+        #Return the list with all the new vertices
         return vertices_new
     
+    #Method used to create the landmasses
     def create_polygons(self,r,g,b,height):
         glNewList(self.polygons,GL_COMPILE)
+        #Extract polygons from shapefile
         for polygon in self.extract_polygons():
+            #Create the line around the country/polygon
             glLineWidth(1.2)
+            #Loop because it is closed
             glBegin(GL_LINE_LOOP)
-            #line colour
+            #line colour 
             glColor(0, 0,0)
             for lon, lat in polygon.exterior.coords:
+                #Convert lon and lat coords to x,y,z
                 glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height, True))
             glEnd()
-            #fill colour
+            #Set the fill colour
             glColor(r, g, b)
+            #GL_Triangles renders individual triangles
             glBegin(GL_TRIANGLES)
+            #Tesselate the polygons into individual triangles
             for vertex in self.polygon_tesselator(polygon , height , True ):
                 glVertex(*vertex)
             glEnd()
@@ -220,32 +239,30 @@ class View(QOpenGLWidget):
             for vertex in self.polygon_tesselator(polygon , height, True):
                 glVertex(*vertex)
             glEnd()
-
         glEndList()
 
+    #Render rivers/lines 
     def create_river_polylines(self,r,g,b,height):
-
         glNewList(self.river_polylines,GL_COMPILE)
-        i=1
+        #Extract polylines from the shapefile
         for polyline in self.extract_polylines():
             glLineWidth(1)
+            #Rivers are strips not loops
             glBegin(GL_LINE_STRIP)
-            
             #line colour
             glColor(r, g,b)
             for lon, lat in polyline.coords:
                 glVertex3f(*self.LLH_to_ECEF(lat, lon, 1 , height, True))
             glEnd()
-            i=i+1
-        print("All rivers done")
         glEndList()
 
-
+    #Render points
     def create_points(self,r,g,b,height):
         glNewList(self.points,GL_COMPILE)
-
         for point in self.extract_points():
-            glPointSize(3)
+            #Set the size of the points
+            glPointSize(4)
+            #Set colour of the points
             glColor(r, g, b)
             glBegin(GL_POINTS)
             for lon, lat in point.coords:
@@ -280,8 +297,8 @@ class View(QOpenGLWidget):
         gluDeleteTess(tess)
         
         aliasing = self.aliasing
-
         for i in range(0, aliasing):
+            #Depend on the number set by the user subdivide the polygons 
             vertices=self.vertices_generator(vertices,height)
         return vertices
 
@@ -317,6 +334,7 @@ class View(QOpenGLWidget):
 
 
     def LLH_to_ECEF(self, lat, lon, alt,height, norm):
+        #Convert degrees to radians
         rad_lat = lat * (math.pi / 180.0)
         rad_lon = lon * (math.pi / 180.0)
         alt= alt*1000
@@ -331,6 +349,7 @@ class View(QOpenGLWidget):
         y = (v + alt) * math.cos(rad_lat) * math.sin(rad_lon)
         z = (v * (1 - e2) + alt) * math.sin(rad_lat)
         
+        #Normalise vector
         if norm == True:
             vector_length= math.sqrt((x*x)+(y*y)+(z*z))
             x=x/vector_length
@@ -347,7 +366,6 @@ class PyEarth(QMainWindow):
         aliasing = 0
         while  1 > aliasing or aliasing > 4 :
             aliasing = int(input("Set aliasing factor from 1 to 4 (2 Recommended): "))
-        
         
         longitude = 200 
         while  -180 > longitude or longitude > 180 :
@@ -394,7 +412,6 @@ class PyEarth(QMainWindow):
         self.view.lat=latitude
         self.view.lon=longitude
         self.view.cam_height = 20
-
 
         fov = fov/40
         self.view.frustL = - fov
